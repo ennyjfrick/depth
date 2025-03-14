@@ -1,33 +1,12 @@
 package tests
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/KyleBanks/depth"
 )
 
-type testArgs struct {
-	PackageName     string
-	ResolveInternal bool
-	ResolveTest     bool
-}
-
-func (t testArgs) Name() string {
-	split := strings.Split(t.PackageName, "/")
-	name := split[len(split)-1]
-	if t.ResolveInternal {
-		name += "/internal"
-	}
-
-	if t.ResolveTest {
-		name += "/test"
-	}
-
-	return name
-}
-
-func BenchmarkTree_ResolveComplex(b *testing.B) {
+func TestTree_Race(t *testing.T) {
 	tt := []testArgs{
 		{
 			PackageName:     "gorm.io/gorm",
@@ -73,19 +52,17 @@ func BenchmarkTree_ResolveComplex(b *testing.B) {
 
 	for _, tc := range tt {
 		tc := tc
-		b.Run(tc.Name(), func(b *testing.B) {
-			benchmarkTree(tc.PackageName, &depth.Tree{
+		t.Run(tc.Name(), func(t *testing.T) {
+			testRaceTree(tc.PackageName, &depth.Tree{
 				ResolveInternal: tc.ResolveInternal,
 				ResolveTest:     tc.ResolveTest,
-			}, b)
+			}, t)
 		})
 	}
 }
 
-func benchmarkTree(pkg string, t *depth.Tree, b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		if err := t.Resolve(pkg); err != nil {
-			b.Fatal(err)
-		}
+func testRaceTree(pkg string, tree *depth.Tree, t *testing.T) {
+	if err := tree.Resolve(pkg); err != nil {
+		t.Fatal(err)
 	}
 }
