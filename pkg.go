@@ -6,6 +6,7 @@ import (
 	"path"
 	"sort"
 	"strings"
+	"sync"
 )
 
 // Pkg represents a Go source package, and its dependencies.
@@ -20,6 +21,7 @@ type Pkg struct {
 	Tree   *Tree `json:"-"`
 	Parent *Pkg  `json:"-"`
 	Deps   []Pkg `json:"deps"`
+	mtx    *sync.Mutex
 
 	Raw *build.Package `json:"-"`
 }
@@ -60,8 +62,8 @@ func (p *Pkg) Resolve(i Importer) {
 		}
 	}
 
-	//first we set the regular dependencies, then we add the test dependencies
-	//sharing the same set. This allows us to mark all test-only deps linearly
+	// first we set the regular dependencies, then we add the test dependencies
+	// sharing the same set. This allows us to mark all test-only deps linearly
 	unique := make(map[string]struct{})
 	p.setDeps(i, pkg.Imports, pkg.Dir, unique, false)
 	if p.Tree.ResolveTest {
@@ -74,19 +76,26 @@ func (p *Pkg) Resolve(i Importer) {
 // to the Pkg.
 func (p *Pkg) setDeps(i Importer, imports []string, srcDir string, unique map[string]struct{}, isTest bool) {
 	for _, imp := range imports {
-		// Mostly for testing files where cyclic imports are allowed.
 		if imp == p.Name {
 			continue
 		}
-
-		// Skip duplicates.
 		if _, ok := unique[imp]; ok {
 			continue
 		}
 		unique[imp] = struct{}{}
-
-		p.addDep(i, imp, srcDir, isTest)
 	}
+
+	var wg sync.WaitGroup
+	for imp := range unique {
+		imp := imp
+		wg.Add(1)
+		go func(imp string) {
+			defer wg.Done()
+			p.addDep(i, imp, srcDir, isTest)
+		}(imp)
+	}
+
+	wg.Wait()
 
 	sort.Sort(byInternalAndName(p.Deps))
 }
@@ -99,9 +108,11 @@ func (p *Pkg) addDep(i Importer, name string, srcDir string, isTest bool) {
 		Tree:   p.Tree,
 		Parent: p,
 		Test:   isTest,
+		mtx:    &sync.Mutex{},
 	}
 	dep.Resolve(i)
-
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
 	p.Deps = append(p.Deps, dep)
 }
 
