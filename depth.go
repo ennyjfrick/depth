@@ -30,6 +30,7 @@ import (
 	"errors"
 	"go/build"
 	"os"
+	"sync"
 )
 
 // ErrRootPkgNotResolved is returned when the root Pkg of the Tree cannot be resolved,
@@ -52,6 +53,7 @@ type Tree struct {
 
 	Importer Importer
 
+	cacheMtx    sync.RWMutex
 	importCache map[string]struct{}
 }
 
@@ -68,6 +70,7 @@ func (t *Tree) Resolve(name string) error {
 		Tree:   t,
 		SrcDir: pwd,
 		Test:   false,
+		mtx:    &sync.Mutex{},
 	}
 
 	// Reset the import cache each time to ensure a reused Tree doesn't
@@ -121,9 +124,22 @@ func (t *Tree) hasSeenImport(name string) bool {
 		t.importCache = make(map[string]struct{})
 	}
 
-	if _, ok := t.importCache[name]; ok {
+	if t.getImportSeen(name) {
 		return true
 	}
-	t.importCache[name] = struct{}{}
+	t.setImportSeen(name)
 	return false
+}
+
+func (t *Tree) getImportSeen(name string) bool {
+	t.cacheMtx.RLock()
+	defer t.cacheMtx.RUnlock()
+	_, ok := t.importCache[name]
+	return ok
+}
+
+func (t *Tree) setImportSeen(name string) {
+	t.cacheMtx.Lock()
+	defer t.cacheMtx.Unlock()
+	t.importCache[name] = struct{}{}
 }

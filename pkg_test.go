@@ -3,6 +3,7 @@ package depth
 import (
 	"go/build"
 	"sort"
+	"sync"
 	"testing"
 )
 
@@ -37,7 +38,7 @@ func TestPkg_AddDepImportSeen(t *testing.T) {
 	testSrcDir := "src/testing"
 	var expectedIm build.ImportMode
 
-	p := Pkg{Tree: &tr}
+	p := Pkg{Tree: &tr, mtx: &sync.Mutex{}}
 	m.ImportFn = func(name, srcDir string, im build.ImportMode) (*build.Package, error) {
 		if name != testName {
 			t.Fatalf("Unexpected name provided, expected=%v, got=%v", testName, name)
